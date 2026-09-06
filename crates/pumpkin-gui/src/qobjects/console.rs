@@ -84,7 +84,7 @@ pub struct ConsoleRust {
 
 impl qobject::Console {
     pub fn refresh(mut self: Pin<&mut Self>) {
-        let has_commands = crate::gui_side().is_some_and(|side| side.commands().is_some());
+        let has_commands = crate::gui_side().is_some_and(|side| side.is_connected());
         if *self.as_ref().has_commands() != has_commands {
             self.as_mut().set_has_commands(has_commands);
         }
@@ -105,7 +105,7 @@ impl qobject::Console {
         let mut scratch = std::mem::take(&mut self.as_mut().rust_mut().scratch);
         scratch.clear();
 
-        let next = side.logs.drain_since(cursor, &mut scratch);
+        let next = side.logs().drain_since(cursor, &mut scratch);
 
         for line in &scratch {
             out.append(line_to_variant(line));
@@ -125,9 +125,6 @@ impl qobject::Console {
         let Some(side) = crate::gui_side() else {
             return;
         };
-        let Some(commands) = side.commands() else {
-            return;
-        };
 
         let text = line.to_string();
         let text = text.trim().trim_start_matches('/').trim();
@@ -135,7 +132,7 @@ impl qobject::Console {
             return;
         }
 
-        commands.submit(text.to_owned());
+        side.submit(text.to_owned());
     }
 
     #[allow(clippy::unused_self)]
@@ -144,15 +141,12 @@ impl qobject::Console {
         let Some(side) = crate::gui_side() else {
             return list;
         };
-        let Some(commands) = side.commands() else {
-            return list;
-        };
 
         let text = line.to_string();
         // QML `cursorPosition` is UTF-16; rustyline and the dispatcher use UTF-8 byte offsets.
         let cursor = utf16_to_utf8_offset(&text, usize::try_from(cursor).unwrap_or(0));
 
-        for candidate in commands.completions(&text, cursor) {
+        for candidate in side.completions(&text, cursor) {
             list.append(QString::from(&candidate));
         }
 
@@ -163,8 +157,8 @@ impl qobject::Console {
 impl qobject::Console {
     #[allow(clippy::unused_self)]
     pub fn request_stop(&self) {
-        if let Some(commands) = crate::gui_side().and_then(crate::GuiSide::commands) {
-            commands.request_stop();
+        if let Some(side) = crate::gui_side() {
+            side.request_stop();
         }
     }
 

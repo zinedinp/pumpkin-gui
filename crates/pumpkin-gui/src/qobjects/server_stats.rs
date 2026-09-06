@@ -241,30 +241,31 @@ impl qobject::ServerStats {
             snapshot.net_out_bps as f64
         );
 
+        let meta = side.meta.load();
         set_if_changed!(
             self,
             pumpkin_version,
             set_pumpkin_version,
-            QString::from(&snapshot.meta.pumpkin_version)
+            QString::from(&meta.pumpkin_version)
         );
         set_if_changed!(
             self,
             java_address,
             set_java_address,
-            QString::from(&snapshot.meta.java_address)
+            QString::from(&meta.java_address)
         );
         set_if_changed!(
             self,
             bedrock_address,
             set_bedrock_address,
-            QString::from(&snapshot.meta.bedrock_address)
+            QString::from(&meta.bedrock_address)
         );
         set_if_changed!(
             self,
             tick_budget_ms,
             set_tick_budget_ms,
-            if snapshot.meta.tick_budget_ms > 0.0 {
-                snapshot.meta.tick_budget_ms
+            if meta.tick_budget_ms > 0.0 {
+                meta.tick_budget_ms
             } else {
                 50.0
             }

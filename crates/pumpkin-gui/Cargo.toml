@@ -6,15 +6,26 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[[bin]]
+name = "pumpkin-gui"
+path = "src/bin/pumpkin-gui.rs"
+
 [dependencies]
 cxx.workspace = true
 cxx-qt.workspace = true
 cxx-qt-lib = { workspace = true, features = ["qt_gui", "qt_qml"] }
 pumpkin-gui-api.workspace = true
 rfd = "0.17.2"
+arc-swap.workspace = true
+clap.workspace = true
+tokio.workspace = true
 
 [build-dependencies]
 cxx-qt-build.workspace = true
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+postcard = "1.1"
 
 [lints]
 workspace = true

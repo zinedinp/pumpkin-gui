@@ -84,7 +84,7 @@ impl qobject::PlayerList {
             return;
         };
 
-        let has_commands = side.commands().is_some();
+        let has_commands = side.is_connected();
         if *self.as_ref().has_commands() != has_commands {
             self.as_mut().set_has_commands(has_commands);
         }
@@ -142,9 +142,6 @@ impl qobject::PlayerList {
         let Some(side) = crate::gui_side() else {
             return;
         };
-        let Some(commands) = side.commands() else {
-            return;
-        };
         let Some(target) = quote_argument(&name.to_string()) else {
             return;
         };
@@ -159,7 +156,7 @@ impl qobject::PlayerList {
             }
         }
 
-        commands.submit(line);
+        side.submit(line);
     }
 }
 

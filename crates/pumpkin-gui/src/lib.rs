@@ -1,25 +1,26 @@
 //! Optional Qt6 monitoring and console window for the Pumpkin server.
 //!
-//! This crate deliberately knows nothing about `pumpkin`'s `Server`: the server fills a
-//! [`Snapshot`] and hands over a [`GuiCommands`] sink, and the window only reads them. That keeps
-//! the dependency one-directional (`pumpkin` -> `pumpkin-gui`)
-
+//! This crate deliberately knows nothing about `pumpkin`'s `Server`: it connects to the running
+//! server over a local IPC socket (see [`client`]) and the window only reads/sends messages.
+pub mod client;
 mod qobjects;
 
-pub use pumpkin_gui_api::{
-    DiskSpace, GuiCommands, GuiSide, LogLevel, LogLine, LogRing, PlayerRow, ServerMeta, Snapshot,
-    SystemSampler, SystemStats, ThemePreference, WorldRow, directory_size,
-};
-
+use std::sync::Arc;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// The handle the `QObject`s read from.
-static GUI_SIDE: OnceLock<GuiSide> = OnceLock::new();
+pub use client::GuiMirror;
+pub use pumpkin_gui_api::{
+    DiskSpace, LogLevel, LogLine, PlayerRow, ServerMeta, Snapshot, SystemSampler, SystemStats,
+    ThemePreference, WorldRow, directory_size,
+};
 
-/// The active [`GuiSide`], or `None` if [`run`] has not been called.
-pub(crate) fn gui_side() -> Option<&'static GuiSide> {
-    GUI_SIDE.get()
+/// The active connection the `QObject`s read from.
+static GUI: OnceLock<Arc<GuiMirror>> = OnceLock::new();
+
+/// The active [`GuiMirror`], or `None` if [`run`] has not been called.
+pub(crate) fn gui_side() -> Option<&'static Arc<GuiMirror>> {
+    GUI.get()
 }
 
 /// QML entry point, resolved from the module URI declared in `build.rs`.
@@ -28,16 +29,10 @@ const MAIN_QML: &str = "qrc:/qt/qml/org/pumpkin/gui/qml/Main.qml";
 /// Set by Qt if the root QML component fails to build.
 static LOAD_FAILED: AtomicBool = AtomicBool::new(false);
 
-/// Set when the server is shutting down (Ctrl+C, `stop`, window close) so the event loop can exit.
-static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
-
-/// Tells the window to leave the Qt event loop.
-pub fn notify_shutdown() {
-    SHUTTING_DOWN.store(true, Ordering::Release);
-}
-
+/// True once the IPC connection has gone away (server shutdown or crash), so the event loop can
+/// exit.
 pub(crate) fn is_shutting_down() -> bool {
-    SHUTTING_DOWN.load(Ordering::Acquire)
+    gui_side().is_some_and(|gui| !gui.is_connected())
 }
 
 /// Why the GUI could not start.
@@ -66,17 +61,17 @@ impl std::fmt::Display for GuiError {
 
 impl std::error::Error for GuiError {}
 
-/// Runs the GUI, returning Qt's exit code once the window closes.
+/// Runs the GUI against an already-connected client, returning Qt's exit code once the window
+/// closes.
 ///
 /// Blocks until then. Must be called on the process's main thread: Qt requires its event loop
 /// there, and macOS enforces it.
 ///
 /// # Errors
 ///
-/// Returns [`GuiError`] if the GUI cannot be started at all, so the caller can carry on headless
-/// instead of sitting on an invisible event loop.
-pub fn run(side: GuiSide) -> Result<i32, GuiError> {
-    GUI_SIDE.set(side).map_err(|_| GuiError::AlreadyRunning)?;
+/// Returns [`GuiError`] if the GUI cannot be started at all.
+pub fn run(client: Arc<GuiMirror>) -> Result<i32, GuiError> {
+    GUI.set(client).map_err(|_| GuiError::AlreadyRunning)?;
 
     let mut app = cxx_qt_lib::QGuiApplication::new();
     let mut engine = cxx_qt_lib::QQmlApplicationEngine::new();
