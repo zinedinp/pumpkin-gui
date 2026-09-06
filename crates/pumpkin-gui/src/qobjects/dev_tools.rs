@@ -1,14 +1,5 @@
 //! Development and CI hooks, driven entirely by environment variables.
 
-// cxx-qt expands into generated glue that does not follow the workspace's lint profile.
-#![allow(
-    clippy::used_underscore_binding,
-    clippy::unnecessary_box_returns,
-    clippy::needless_lifetimes,
-    clippy::multiple_unsafe_ops_per_block,
-    clippy::undocumented_unsafe_blocks
-)]
-
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {

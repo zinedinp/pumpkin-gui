@@ -3,15 +3,6 @@
 //! Commands go through the same dispatcher the terminal console uses, so plugin events,
 //! permissions and command output behave identically whether typed here or in the terminal.
 
-// cxx-qt expands into generated glue that does not follow the workspace's lint profile.
-#![allow(
-    clippy::used_underscore_binding,
-    clippy::unnecessary_box_returns,
-    clippy::needless_lifetimes,
-    clippy::multiple_unsafe_ops_per_block,
-    clippy::undocumented_unsafe_blocks
-)]
-
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {
@@ -70,7 +61,7 @@ pub mod qobject {
 
 use core::pin::Pin;
 use cxx_qt::CxxQtType;
-use cxx_qt_lib::{QList, QMap, QMapPair_QString_QVariant, QString, QStringList, QVariant};
+use cxx_qt_lib::{QList, QString, QStringList, QVariant};
 
 #[derive(Default)]
 pub struct ConsoleRust {
@@ -219,24 +210,10 @@ fn utf16_to_utf8_offset(text: &str, utf16_cursor: usize) -> usize {
 }
 
 fn line_to_variant(line: &crate::LogLine) -> QVariant {
-    let mut map = QMap::<QMapPair_QString_QVariant>::default();
-
-    map.insert(
-        QString::from("level"),
-        QVariant::from(&QString::from(line.level.as_str())),
-    );
-    map.insert(
-        QString::from("target"),
-        QVariant::from(&QString::from(&line.target)),
-    );
-    map.insert(
-        QString::from("message"),
-        QVariant::from(&QString::from(&line.message)),
-    );
-    map.insert(
-        QString::from("html"),
-        QVariant::from(&QString::from(&line.html)),
-    );
-
-    QVariant::from(&map)
+    crate::qobjects::RowBuilder::new()
+        .text("level", line.level.as_str())
+        .text("target", &line.target)
+        .text("message", &line.message)
+        .text("html", &line.html)
+        .build()
 }

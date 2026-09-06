@@ -1,11 +1,4 @@
 //! The server-stats `QObject`: pulls the newest [`crate::Snapshot`] into Qt properties.
-#![allow(
-    clippy::used_underscore_binding,
-    clippy::unnecessary_box_returns,
-    clippy::needless_lifetimes,
-    clippy::multiple_unsafe_ops_per_block,
-    clippy::undocumented_unsafe_blocks
-)]
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -63,20 +56,9 @@ pub mod qobject {
 
 use core::pin::Pin;
 use cxx_qt::CxxQtType;
-use cxx_qt_lib::{QList, QMap, QMapPair_QString_QVariant, QString, QVariant};
+use cxx_qt_lib::{QList, QString, QVariant};
 
-/// Assigns a Qt property only when the value actually moved.
-///
-/// Every setter emits a change signal, so unconditional writes at 2 Hz would repaint the whole
-/// window even while nothing changed.
-macro_rules! set_if_changed {
-    ($self:ident, $getter:ident, $setter:ident, $value:expr) => {{
-        let next = $value;
-        if *$self.as_ref().$getter() != next {
-            $self.as_mut().$setter(next);
-        }
-    }};
-}
+use crate::qobjects::set_if_changed;
 
 pub struct ServerStatsRust {
     server_ready: bool,
@@ -169,18 +151,18 @@ impl qobject::ServerStats {
         let snapshot = side.snapshot.load();
 
         set_if_changed!(self, server_ready, set_server_ready, snapshot.server_ready);
-        set_if_changed!(self, cpu_total, set_cpu_total, snapshot.cpu_total);
+        set_if_changed!(self, cpu_total, set_cpu_total, snapshot.system.cpu_total);
         set_if_changed!(
             self,
             cpu_temp_c,
             set_cpu_temp_c,
-            snapshot.cpu_temp_c.map_or(-1.0, f64::from)
+            snapshot.system.cpu_temp_c.map_or(-1.0, f64::from)
         );
         set_if_changed!(
             self,
             cpu_core_count,
             set_cpu_core_count,
-            i32::try_from(snapshot.cpu_per_core.len()).unwrap_or(0)
+            i32::try_from(snapshot.system.cpu_per_core.len()).unwrap_or(0)
         );
         set_if_changed!(self, tps, set_tps, snapshot.tps);
         set_if_changed!(self, mspt, set_mspt, snapshot.mspt);
@@ -204,19 +186,19 @@ impl qobject::ServerStats {
             self,
             mem_process_rss,
             set_mem_process_rss,
-            snapshot.mem_process_rss as f64
+            snapshot.system.mem_process_rss as f64
         );
         set_if_changed!(
             self,
             mem_system_used,
             set_mem_system_used,
-            snapshot.mem_system_used as f64
+            snapshot.system.mem_system_used as f64
         );
         set_if_changed!(
             self,
             mem_system_total,
             set_mem_system_total,
-            snapshot.mem_system_total as f64
+            snapshot.system.mem_system_total as f64
         );
         set_if_changed!(
             self,
@@ -231,8 +213,8 @@ impl qobject::ServerStats {
             // -1 marks "not scanned yet" so QML can show a placeholder instead of a bogus 0 B.
             snapshot.worlds_size_bytes.map_or(-1.0, |size| size as f64)
         );
-        set_if_changed!(self, disk_free, set_disk_free, snapshot.disk_free as f64);
-        set_if_changed!(self, disk_total, set_disk_total, snapshot.disk_total as f64);
+        set_if_changed!(self, disk_free, set_disk_free, snapshot.disk.free as f64);
+        set_if_changed!(self, disk_total, set_disk_total, snapshot.disk.total as f64);
         set_if_changed!(self, net_in_bps, set_net_in_bps, snapshot.net_in_bps as f64);
         set_if_changed!(
             self,
@@ -272,6 +254,7 @@ impl qobject::ServerStats {
         );
 
         let cores: Vec<f64> = snapshot
+            .system
             .cpu_per_core
             .iter()
             .map(|usage| f64::from(*usage))
@@ -307,40 +290,20 @@ impl qobject::ServerStats {
 }
 
 fn world_to_variant(world: &crate::WorldRow) -> QVariant {
-    let mut map = QMap::<QMapPair_QString_QVariant>::default();
+    let count = |value: usize| QVariant::from(&i32::try_from(value).unwrap_or(i32::MAX));
 
-    map.insert(
-        QString::from("name"),
-        QVariant::from(&QString::from(&world.name)),
-    );
-    map.insert(
-        QString::from("dimension"),
-        QVariant::from(&QString::from(&world.dimension)),
-    );
-    map.insert(
-        QString::from("chunks"),
-        QVariant::from(&i32::try_from(world.loaded_chunks).unwrap_or(i32::MAX)),
-    );
-    map.insert(
-        QString::from("entities"),
-        QVariant::from(&i32::try_from(world.entities).unwrap_or(i32::MAX)),
-    );
-    map.insert(
-        QString::from("players"),
-        QVariant::from(&i32::try_from(world.players).unwrap_or(i32::MAX)),
-    );
-    map.insert(
-        QString::from("timeOfDay"),
-        QVariant::from(&(world.time_of_day as f64)),
-    );
-    map.insert(
-        QString::from("weather"),
-        QVariant::from(&QString::from(&world.weather)),
-    );
-    map.insert(
-        QString::from("size"),
-        QVariant::from(&world.size_bytes.map_or(-1.0, |size| size as f64)),
-    );
-
-    QVariant::from(&map)
+    crate::qobjects::RowBuilder::new()
+        .text("name", &world.name)
+        .text("dimension", &world.dimension)
+        .set("chunks", count(world.loaded_chunks))
+        .set("entities", count(world.entities))
+        .set("players", count(world.players))
+        .set("timeOfDay", QVariant::from(&(world.time_of_day as f64)))
+        .text("weather", &world.weather)
+        // -1 is the "not scanned yet" sentinel QML checks for.
+        .set(
+            "size",
+            QVariant::from(&world.size_bytes.map_or(-1.0, |size| size as f64)),
+        )
+        .build()
 }

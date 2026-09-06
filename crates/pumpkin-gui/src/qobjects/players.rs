@@ -1,14 +1,5 @@
 //! The online-player table and the actions on it.
 
-// cxx-qt expands into generated glue that does not follow the workspace's lint profile.
-#![allow(
-    clippy::used_underscore_binding,
-    clippy::unnecessary_box_returns,
-    clippy::needless_lifetimes,
-    clippy::multiple_unsafe_ops_per_block,
-    clippy::undocumented_unsafe_blocks
-)]
-
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {
@@ -68,7 +59,7 @@ pub mod qobject {
 
 use core::pin::Pin;
 use cxx_qt::CxxQtType;
-use cxx_qt_lib::{QList, QMap, QMapPair_QString_QVariant, QString, QVariant};
+use cxx_qt_lib::{QList, QString, QVariant};
 
 #[derive(Default)]
 pub struct PlayerListRust {
@@ -193,40 +184,17 @@ fn sanitize_reason(reason: &str) -> String {
 }
 
 fn player_to_variant(player: &crate::PlayerRow) -> QVariant {
-    let mut map = QMap::<QMapPair_QString_QVariant>::default();
-
-    map.insert(
-        QString::from("name"),
-        QVariant::from(&QString::from(&player.name)),
-    );
-    map.insert(
-        QString::from("uuid"),
-        QVariant::from(&QString::from(&player.uuid)),
-    );
-    map.insert(
-        QString::from("edition"),
-        QVariant::from(&QString::from(&player.edition)),
-    );
-    map.insert(QString::from("ping"), QVariant::from(&player.ping_ms));
-    map.insert(
-        QString::from("dimension"),
-        QVariant::from(&QString::from(&player.dimension)),
-    );
-    map.insert(
-        QString::from("gamemode"),
-        QVariant::from(&QString::from(&player.gamemode)),
-    );
-    map.insert(
-        QString::from("online"),
-        QVariant::from(&(player.online_secs as f64)),
-    );
-    map.insert(QString::from("isOnline"), QVariant::from(&player.online));
-    map.insert(QString::from("operator"), QVariant::from(&player.operator));
-    map.insert(QString::from("banned"), QVariant::from(&player.banned));
-    map.insert(
-        QString::from("whitelisted"),
-        QVariant::from(&player.whitelisted),
-    );
-
-    QVariant::from(&map)
+    crate::qobjects::RowBuilder::new()
+        .text("name", &player.name)
+        .text("uuid", &player.uuid)
+        .text("edition", &player.edition)
+        .set("ping", QVariant::from(&player.ping_ms))
+        .text("dimension", &player.dimension)
+        .text("gamemode", &player.gamemode)
+        .set("online", QVariant::from(&(player.online_secs as f64)))
+        .set("isOnline", QVariant::from(&player.online))
+        .set("operator", QVariant::from(&player.operator))
+        .set("banned", QVariant::from(&player.banned))
+        .set("whitelisted", QVariant::from(&player.whitelisted))
+        .build()
 }

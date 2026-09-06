@@ -1,13 +1,13 @@
 //! The background IPC connection and the local mirror the `QObject`s read from.
 
-use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use arc_swap::ArcSwap;
 use pumpkin_gui_api::{
-    GuiMessage, LogLine, RequestId, ServerMessage, ServerMeta, Snapshot, ThemePreference,
+    GuiMessage, LogRing, PROTOCOL_VERSION, RequestId, ServerMessage, ServerMeta, Snapshot,
+    ThemePreference,
     read_message, write_message,
 };
 use tokio::io::{AsyncRead, AsyncWrite};
@@ -16,60 +16,15 @@ use tokio::sync::mpsc;
 /// How long [`GuiMirror::completions`] waits for a response before giving up.
 const COMPLETIONS_TIMEOUT: Duration = Duration::from_millis(500);
 
-pub struct LocalLogRing {
-    inner: Mutex<LocalLogRingInner>,
-}
-
-struct LocalLogRingInner {
-    lines: VecDeque<LogLine>,
-    capacity: usize,
-    next_seq: u64,
-}
-
-impl LocalLogRing {
-    const fn new() -> Self {
-        let capacity = 20_000;
-        Self {
-            inner: Mutex::new(LocalLogRingInner {
-                lines: VecDeque::new(),
-                capacity,
-                next_seq: 0,
-            }),
-        }
-    }
-
-    fn extend(&self, new_lines: Vec<LogLine>) {
-        let mut inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
-        for line in new_lines {
-            inner.next_seq = line.seq + 1;
-            inner.lines.push_back(line);
-        }
-        while inner.lines.len() > inner.capacity {
-            inner.lines.pop_front();
-        }
-    }
-
-    /// Appends every line newer than `cursor` to `out` and returns the new cursor. Mirrors
-    /// `pumpkin_gui_api::LogRing::drain_since`'s contract exactly.
-    pub fn drain_since(&self, cursor: u64, out: &mut Vec<LogLine>) -> u64 {
-        let inner = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
-        out.extend(
-            inner
-                .lines
-                .iter()
-                .filter(|line| line.seq >= cursor)
-                .cloned(),
-        );
-        inner.next_seq
-    }
-}
+/// How much scrollback the window keeps, independent of the server's own ring size.
+const LOG_CAPACITY: usize = 20_000;
 
 /// The connection the `QObject`s read from and send actions through.
 pub struct GuiMirror {
     pub snapshot: Arc<ArcSwap<Snapshot>>,
     pub meta: Arc<ArcSwap<ServerMeta>>,
     pub theme: ThemePreference,
-    logs: LocalLogRing,
+    logs: LogRing,
     outbound: mpsc::UnboundedSender<GuiMessage>,
     next_request_id: AtomicU32,
     pending_completions: Mutex<Option<(RequestId, std::sync::mpsc::Sender<Vec<String>>)>>,
@@ -78,7 +33,7 @@ pub struct GuiMirror {
 
 impl GuiMirror {
     #[must_use]
-    pub const fn logs(&self) -> &LocalLogRing {
+    pub const fn logs(&self) -> &LogRing {
         &self.logs
     }
 
@@ -177,7 +132,22 @@ async fn run_connection(
     let (mut read_half, write_half) = tokio::io::split(stream);
 
     let (meta, theme) = match read_message::<_, ServerMessage>(&mut read_half).await {
-        Ok(ServerMessage::Hello { meta, theme }) => (meta, theme),
+        Ok(ServerMessage::Hello {
+            protocol,
+            meta,
+            theme,
+        }) => {
+            // postcard decodes a skewed variant list silently wrong, so stop at the handshake
+            // rather than misreading everything after it.
+            if protocol != PROTOCOL_VERSION {
+                let _ = ready_tx.send(Err(std::io::Error::other(format!(
+                    "the server speaks GUI protocol v{protocol}, this window speaks \
+                     v{PROTOCOL_VERSION}; rebuild both from the same source"
+                ))));
+                return;
+            }
+            (meta, theme)
+        }
         Ok(_) => {
             let _ = ready_tx.send(Err(std::io::Error::other(
                 "expected Hello as the server's first message",
@@ -195,7 +165,7 @@ async fn run_connection(
         snapshot: Arc::new(ArcSwap::from_pointee(Snapshot::default())),
         meta: Arc::new(ArcSwap::from_pointee(meta)),
         theme,
-        logs: LocalLogRing::new(),
+        logs: LogRing::new(LOG_CAPACITY),
         outbound: out_tx,
         next_request_id: AtomicU32::new(0),
         pending_completions: Mutex::new(None),

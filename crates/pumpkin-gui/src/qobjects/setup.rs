@@ -1,14 +1,5 @@
 //! The first-run wizard: shown whenever [`crate::launcher`] has not resolved a server to talk to.
 
-// cxx-qt expands into generated glue that does not follow the workspace's lint profile.
-#![allow(
-    clippy::used_underscore_binding,
-    clippy::unnecessary_box_returns,
-    clippy::needless_lifetimes,
-    clippy::multiple_unsafe_ops_per_block,
-    clippy::undocumented_unsafe_blocks
-)]
-
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {
@@ -43,6 +34,7 @@ pub mod qobject {
 use core::pin::Pin;
 use cxx_qt_lib::QString;
 
+use crate::qobjects::set_if_changed;
 use crate::launcher::Status;
 
 pub struct SetupControllerRust {
@@ -92,28 +84,21 @@ impl qobject::SetupController {
             Status::Failed { headline, detail } => (true, true, headline, detail),
         };
 
-        if *self.as_ref().needs_setup() != needs_setup {
-            self.as_mut().set_needs_setup(needs_setup);
-        }
-
-        if *self.as_ref().failed() != failed {
-            self.as_mut().set_failed(failed);
-        }
-
-        let headline = QString::from(&headline);
-        if *self.as_ref().headline() != headline {
-            self.as_mut().set_headline(headline);
-        }
-
-        let managed = crate::launcher::is_managed();
-        if *self.as_ref().managed() != managed {
-            self.as_mut().set_managed(managed);
-        }
-
-        let message = QString::from(&message);
-        if *self.as_ref().status_message() != message {
-            self.as_mut().set_status_message(message);
-        }
+        set_if_changed!(self, needs_setup, set_needs_setup, needs_setup);
+        set_if_changed!(self, failed, set_failed, failed);
+        set_if_changed!(self, headline, set_headline, QString::from(&headline));
+        set_if_changed!(
+            self,
+            managed,
+            set_managed,
+            crate::launcher::is_managed()
+        );
+        set_if_changed!(
+            self,
+            status_message,
+            set_status_message,
+            QString::from(&message)
+        );
     }
 
     #[allow(clippy::unused_self)]

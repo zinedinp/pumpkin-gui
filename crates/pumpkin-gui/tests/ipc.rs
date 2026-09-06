@@ -39,6 +39,7 @@ fn connect_receives_hello_snapshot_and_logs() {
         pumpkin_gui_api::write_message(
             &mut stream,
             &ServerMessage::Hello {
+                protocol: pumpkin_gui_api::PROTOCOL_VERSION,
                 meta: ServerMeta {
                     pumpkin_version: "test".to_owned(),
                     ..Default::default()
@@ -134,5 +135,51 @@ fn connect_receives_hello_snapshot_and_logs() {
             .expect("server task panicked");
     });
 
+    let _ = std::fs::remove_file(&path);
+}
+
+/// A server built from different sources must be rejected at the handshake, not read as garbage.
+#[test]
+fn a_protocol_mismatch_is_refused_with_both_versions_named() {
+    let path = std::env::temp_dir().join(format!("pumpkin-gui-skew-{}.sock", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+
+    let listen_path = path.clone();
+    let server = std::thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        runtime.block_on(async move {
+            let listener = tokio::net::UnixListener::bind(&listen_path).expect("bind");
+            let (mut stream, _) = listener.accept().await.expect("accept");
+            pumpkin_gui_api::write_message(
+                &mut stream,
+                &ServerMessage::Hello {
+                    protocol: pumpkin_gui_api::PROTOCOL_VERSION + 1,
+                    meta: ServerMeta::default(),
+                    theme: ThemePreference::Dark,
+                },
+            )
+            .await
+            .expect("write hello");
+        });
+    });
+
+    // Give the listener a moment to bind before connecting.
+    std::thread::sleep(std::time::Duration::from_millis(200));
+
+    let text = match pumpkin_gui::client::connect(&path.to_string_lossy()) {
+        Ok(_) => panic!("a skewed server must not be accepted"),
+        Err(err) => err.to_string(),
+    };
+
+    assert!(text.contains("protocol"), "unhelpful message: {text}");
+    assert!(
+        text.contains(&(pumpkin_gui_api::PROTOCOL_VERSION + 1).to_string()),
+        "the server's version must be named: {text}"
+    );
+
+    server.join().expect("server thread");
     let _ = std::fs::remove_file(&path);
 }

@@ -15,8 +15,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 pub use client::GuiMirror;
 pub use pumpkin_gui_api::{
-    DiskSpace, LogLevel, LogLine, PlayerRow, ServerMeta, Snapshot, SystemSampler, SystemStats,
-    ThemePreference, WorldRow, directory_size,
+    DiskSpace, LogLevel, LogLine, PlayerRow, ServerMeta, Snapshot, SystemStats, ThemePreference,
+    WorldRow,
 };
 
 static GUI: OnceLock<Arc<GuiMirror>> = OnceLock::new();

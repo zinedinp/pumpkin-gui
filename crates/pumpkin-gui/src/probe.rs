@@ -102,3 +102,117 @@ fn classify(output: &Output) -> Result<(), ProbeError> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
+    use super::*;
+    use pumpkin_gui_api::format_version_line;
+
+    #[cfg(unix)]
+    fn output(code: i32, stdout: &str, stderr: &str) -> Output {
+        use std::os::unix::process::ExitStatusExt;
+
+        Output {
+            status: std::process::ExitStatus::from_raw(code << 8),
+            stdout: stdout.as_bytes().to_vec(),
+            stderr: stderr.as_bytes().to_vec(),
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_gui_build_is_accepted() {
+        let line = format_version_line("0.1.0", "abc1234", "release", true);
+
+        assert!(classify(&output(0, &line, "")).is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_non_gui_build_is_rejected_by_name() {
+        let line = format_version_line("0.1.0", "abc1234", "release", false);
+
+        match classify(&output(0, &line, "")) {
+            Err(ProbeError::NoGuiFeature { version }) => assert_eq!(version, line),
+            other => panic!("expected NoGuiFeature, got {other:?}"),
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn something_that_is_not_pumpkin_is_rejected() {
+        match classify(&output(0, "GNU bash, version 5.2\n", "")) {
+            Err(ProbeError::NotPumpkin { first_line }) => {
+                assert!(first_line.contains("bash"), "{first_line}");
+            }
+            other => panic!("expected NotPumpkin, got {other:?}"),
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_non_zero_exit_reports_its_stderr() {
+        match classify(&output(1, "", "no such option\n")) {
+            Err(ProbeError::Failed { stderr, .. }) => assert_eq!(stderr, "no such option"),
+            other => panic!("expected Failed, got {other:?}"),
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn only_the_first_line_of_output_is_considered() {
+        // A build that prints a warning after the version line is still valid.
+        let line = format_version_line("0.1.0", "abc1234", "debug", true);
+        let stdout = format!("{line}\nsome trailing noise\n");
+
+        assert!(classify(&output(0, &stdout, "")).is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn empty_output_is_not_pumpkin() {
+        assert!(matches!(
+            classify(&output(0, "", "")),
+            Err(ProbeError::NotPumpkin { .. })
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn validate_rejects_a_real_binary_that_is_not_pumpkin() {
+        match validate(Path::new("/bin/true")) {
+            Err(ProbeError::NotPumpkin { .. }) => {}
+            other => panic!("expected NotPumpkin, got {other:?}"),
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn validate_reports_a_failing_binary() {
+        match validate(Path::new("/bin/false")) {
+            Err(ProbeError::Failed { .. }) => {}
+            other => panic!("expected Failed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_reports_a_missing_binary_instead_of_panicking() {
+        match validate(Path::new("/nonexistent/pumpkin-does-not-exist")) {
+            Err(ProbeError::Spawn(_)) => {}
+            other => panic!("expected Spawn, got {other:?}"),
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_no_gui_message_tells_the_user_how_to_fix_it() {
+        let line = format_version_line("0.1.0", "abc1234", "release", false);
+        let text = classify(&output(0, &line, ""))
+            .expect_err("must reject")
+            .to_string();
+
+        assert!(text.contains("--features gui"), "{text}");
+    }
+}
