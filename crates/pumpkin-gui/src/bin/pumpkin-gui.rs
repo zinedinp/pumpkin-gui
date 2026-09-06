@@ -4,35 +4,20 @@
 use clap::Parser;
 
 /// Optional Qt6 monitoring and console window for the Pumpkin server.
+///
+/// Run with no arguments to find or start a server automatically
+/// (see `gui.conf`, created next to this executable on first run).
 #[derive(Parser)]
 struct Args {
+    /// Attaches to a server already running at this endpoint
     #[arg(long)]
-    connect: Option<String>,
+    attach: Option<String>,
 }
 
 fn main() {
     let args = Args::parse();
 
-    let Some(endpoint) = args
-        .connect
-        .or_else(|| std::env::var(pumpkin_gui_api::GUI_ENDPOINT_ENV).ok())
-    else {
-        eprintln!(
-            "pumpkin-gui: no server endpoint given (pass --connect or set {})",
-            pumpkin_gui_api::GUI_ENDPOINT_ENV
-        );
-        std::process::exit(1);
-    };
-
-    let client = match pumpkin_gui::client::connect(&endpoint) {
-        Ok(client) => client,
-        Err(err) => {
-            eprintln!("pumpkin-gui: could not connect to {endpoint}: {err}");
-            std::process::exit(1);
-        }
-    };
-
-    match pumpkin_gui::run(client) {
+    match pumpkin_gui::run(args.attach) {
         Ok(code) => std::process::exit(code),
         Err(err) => {
             eprintln!("pumpkin-gui: {err}");

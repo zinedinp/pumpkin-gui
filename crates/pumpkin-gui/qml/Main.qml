@@ -14,6 +14,10 @@ ApplicationWindow {
     title: qsTr("Pumpkin")
     color: Theme.background
 
+    SetupController {
+        id: setup
+    }
+
     ServerStats {
         id: stats
         Component.onCompleted: Theme.preference = themePreference
@@ -38,8 +42,10 @@ ApplicationWindow {
         root.close();
     }
 
+    // Only stop the server on close when this GUI spawned it itself.
+    // attaching to a server must leave that server running.
     onClosing: {
-        if (dev.screenshotPath === "")
+        if (dev.screenshotPath === "" && setup.managed)
             consoleController.requestStop();
     }
 
@@ -66,6 +72,7 @@ ApplicationWindow {
         repeat: true
         triggeredOnStart: true
         onTriggered: {
+            setup.refresh();
             stats.refresh();
             playerList.refresh();
             consoleController.refresh();
@@ -238,5 +245,12 @@ ApplicationWindow {
                 }
             }
         }
+    }
+
+    Setup {
+        anchors.fill: parent
+        visible: setup.needsSetup
+        z: 10
+        controller: setup
     }
 }

@@ -29,6 +29,7 @@ fn main() {
         .qml_file(QmlFile::from("qml/Icons.qml").singleton(true))
         .qml_files([
             "qml/Main.qml",
+            "qml/Setup.qml",
             "qml/Overview.qml",
             "qml/Performance.qml",
             "qml/StatTile.qml",
@@ -65,6 +66,7 @@ fn main() {
                 "src/qobjects/players.rs",
                 "src/qobjects/dev_tools.rs",
                 "src/qobjects/console.rs",
+                "src/qobjects/setup.rs",
             ])
             // Embedded rather than loaded from disk so the binary stays self-contained. The QML
             // module supplies the `/qt/qml/org/pumpkin/gui` prefix.

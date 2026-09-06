@@ -1,8 +1,11 @@
 //! Optional Qt6 monitoring and console window for the Pumpkin server.
 //!
 //! This crate deliberately knows nothing about `pumpkin`'s `Server`: it connects to the running
-//! server over a local IPC socket (see [`client`]) and the window only reads/sends messages.
+//! server over a local IPC socket (see [`client`]) and the window only reads/sends messages. It
+//! is also responsible for finding or starting that server
 pub mod client;
+mod config;
+mod launcher;
 mod qobjects;
 
 use std::sync::Arc;
@@ -15,12 +18,16 @@ pub use pumpkin_gui_api::{
     ThemePreference, WorldRow, directory_size,
 };
 
-/// The active connection the `QObject`s read from.
 static GUI: OnceLock<Arc<GuiMirror>> = OnceLock::new();
 
-/// The active [`GuiMirror`], or `None` if [`run`] has not been called.
 pub(crate) fn gui_side() -> Option<&'static Arc<GuiMirror>> {
     GUI.get()
+}
+
+/// Installs the resolved connection. Returns `false` if one was already installed (should not
+/// happen: [`launcher`] only ever resolves once per process).
+pub(crate) fn install(client: Arc<GuiMirror>) -> bool {
+    GUI.set(client).is_ok()
 }
 
 /// QML entry point, resolved from the module URI declared in `build.rs`.
@@ -28,6 +35,9 @@ const MAIN_QML: &str = "qrc:/qt/qml/org/pumpkin/gui/qml/Main.qml";
 
 /// Set by Qt if the root QML component fails to build.
 static LOAD_FAILED: AtomicBool = AtomicBool::new(false);
+
+/// Guards against [`run`] being called more than once in this process.
+static STARTED: AtomicBool = AtomicBool::new(false);
 
 /// True once the IPC connection has gone away (server shutdown or crash), so the event loop can
 /// exit.
@@ -42,7 +52,7 @@ pub enum GuiError {
     AlreadyRunning,
     /// Qt could not create a `QGuiApplication`, usually because there is no display.
     NoQtApplication,
-    /// The root QML component failed to load; Qt has logged the details.
+    /// The root QML component failed to load, Qt has logged the details.
     QmlLoadFailed,
 }
 
@@ -61,17 +71,18 @@ impl std::fmt::Display for GuiError {
 
 impl std::error::Error for GuiError {}
 
-/// Runs the GUI against an already-connected client, returning Qt's exit code once the window
-/// closes.
+/// Starts the window and returns Qt's exit code once it closes.
 ///
-/// Blocks until then. Must be called on the process's main thread: Qt requires its event loop
-/// there, and macOS enforces it.
+/// Blocks until the window closes. Must be called on the process's main thread: Qt requires its
+/// event loop there, and macOS enforces it.
 ///
 /// # Errors
 ///
 /// Returns [`GuiError`] if the GUI cannot be started at all.
-pub fn run(client: Arc<GuiMirror>) -> Result<i32, GuiError> {
-    GUI.set(client).map_err(|_| GuiError::AlreadyRunning)?;
+pub fn run(attach: Option<String>) -> Result<i32, GuiError> {
+    if STARTED.swap(true, Ordering::AcqRel) {
+        return Err(GuiError::AlreadyRunning);
+    }
 
     let mut app = cxx_qt_lib::QGuiApplication::new();
     let mut engine = cxx_qt_lib::QQmlApplicationEngine::new();
@@ -90,11 +101,16 @@ pub fn run(client: Arc<GuiMirror>) -> Result<i32, GuiError> {
         return Err(GuiError::QmlLoadFailed);
     }
 
-    if is_shutting_down() {
-        return Ok(0);
-    }
+    launcher::start(attach);
 
-    app.as_mut()
-        .map(cxx_qt_lib::QGuiApplication::exec)
-        .ok_or(GuiError::NoQtApplication)
+    let code = if is_shutting_down() {
+        Ok(0)
+    } else {
+        app.as_mut()
+            .map(cxx_qt_lib::QGuiApplication::exec)
+            .ok_or(GuiError::NoQtApplication)
+    };
+
+    launcher::shutdown_managed_child();
+    code
 }
