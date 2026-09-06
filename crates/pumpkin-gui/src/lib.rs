@@ -6,6 +6,7 @@
 pub mod client;
 mod config;
 mod launcher;
+mod probe;
 mod qobjects;
 
 use std::sync::Arc;

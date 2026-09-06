@@ -12,16 +12,18 @@ Rectangle {
     Card {
         anchors.centerIn: parent
         width: Math.min(460, parent.width - 2 * Theme.gap)
-        title: qsTr("Connect to a Pumpkin server")
+        title: root.controller.headline
 
         ColumnLayout {
             width: parent.width
             spacing: Theme.gap
 
             Text {
-                text: qsTr("No server was found next to pumpkin-gui. Choose the server executable, or connect to one that's already running.")
-                color: Theme.fgMuted
-                font.pixelSize: 12
+                text: root.controller.failed
+                    ? root.controller.statusMessage
+                    : qsTr("No server was found next to pumpkin-gui. Choose the server executable, or connect to one that's already running.")
+                color: root.controller.failed ? Theme.danger : Theme.fgMuted
+                font.pixelSize: root.controller.failed ? 13 : 12
                 wrapMode: Text.WordWrap
                 Layout.fillWidth: true
             }
@@ -66,7 +68,7 @@ Rectangle {
 
             Text {
                 text: root.controller.statusMessage
-                visible: text !== ""
+                visible: !root.controller.failed && text !== ""
                 color: Theme.fgMuted
                 font.pixelSize: 12
                 wrapMode: Text.WordWrap

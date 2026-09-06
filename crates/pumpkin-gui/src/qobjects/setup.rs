@@ -21,6 +21,8 @@ pub mod qobject {
         #[qobject]
         #[qml_element]
         #[qproperty(bool, needs_setup)]
+        #[qproperty(bool, failed)]
+        #[qproperty(QString, headline)]
         #[qproperty(bool, managed)]
         #[qproperty(QString, status_message)]
         type SetupController = super::SetupControllerRust;
@@ -45,6 +47,8 @@ use crate::launcher::Status;
 
 pub struct SetupControllerRust {
     needs_setup: bool,
+    failed: bool,
+    headline: QString,
     managed: bool,
     status_message: QString,
 }
@@ -53,6 +57,8 @@ impl Default for SetupControllerRust {
     fn default() -> Self {
         Self {
             needs_setup: true,
+            failed: false,
+            headline: QString::from(crate::launcher::HEADLINE_SETUP),
             managed: false,
             status_message: QString::default(),
         }
@@ -61,17 +67,42 @@ impl Default for SetupControllerRust {
 
 impl qobject::SetupController {
     pub fn refresh(mut self: Pin<&mut Self>) {
-        let (needs_setup, message) = match crate::launcher::status() {
-            Status::Resolving => (true, "Looking for a server…".to_owned()),
-            Status::NeedsSetup => (true, String::new()),
-            Status::Launching(message) | Status::Connecting(message) | Status::Error(message) => {
-                (true, message)
+        let (needs_setup, failed, headline, message) = match crate::launcher::status() {
+            Status::Resolving => (
+                true,
+                false,
+                crate::launcher::HEADLINE_SETUP.to_owned(),
+                "Looking for a server…".to_owned(),
+            ),
+            Status::NeedsSetup => (
+                true,
+                false,
+                crate::launcher::HEADLINE_SETUP.to_owned(),
+                String::new(),
+            ),
+            Status::Validating(message) | Status::Launching(message) | Status::Connecting(message) => {
+                (true, false, crate::launcher::HEADLINE_SETUP.to_owned(), message)
             }
-            Status::Connected => (false, String::new()),
+            Status::Connected => (
+                false,
+                false,
+                crate::launcher::HEADLINE_SETUP.to_owned(),
+                String::new(),
+            ),
+            Status::Failed { headline, detail } => (true, true, headline, detail),
         };
 
         if *self.as_ref().needs_setup() != needs_setup {
             self.as_mut().set_needs_setup(needs_setup);
+        }
+
+        if *self.as_ref().failed() != failed {
+            self.as_mut().set_failed(failed);
+        }
+
+        let headline = QString::from(&headline);
+        if *self.as_ref().headline() != headline {
+            self.as_mut().set_headline(headline);
         }
 
         let managed = crate::launcher::is_managed();
