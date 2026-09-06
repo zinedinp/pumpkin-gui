@@ -1,0 +1,25 @@
+[package]
+name = "pumpkin-gui"
+version.workspace = true
+description = "Optional Qt6 monitoring and console window for the Pumpkin server."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+cxx.workspace = true
+cxx-qt.workspace = true
+cxx-qt-lib = { workspace = true, features = ["qt_gui", "qt_qml"] }
+pumpkin-gui-api.workspace = true
+rfd = "0.17.2"
+
+[build-dependencies]
+cxx-qt-build.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata.cargo-machete]
+# `cxx` is required by `#[cxx_qt::bridge]`'s macro expansion (the `include!`/`extern "C++"`
+# glue), even though nothing here references `cxx::` directly.
+ignored = ["cxx"]

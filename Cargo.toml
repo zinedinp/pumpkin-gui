@@ -1,0 +1,98 @@
+[workspace]
+resolver = "2"
+members = ["crates/pumpkin-gui"]
+
+[workspace.package]
+version = "0.1.0-dev"
+edition = "2024"
+rust-version = "1.96"
+license = "GPL-3.0"
+
+[workspace.lints.clippy]
+# Groups
+all = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+cargo = { level = "deny", priority = -1 }
+
+if_then_some_else_none = "deny"
+empty_enum_variants_with_brackets = "deny"
+empty_structs_with_brackets = "deny"
+separated_literal_suffix = "deny"
+semicolon_outside_block = "deny"
+redundant_test_prefix = "deny"
+non_zero_suggestions = "deny"
+dbg_macro = "deny"
+rc_buffer = "deny"
+verbose_file_reads = "deny"
+string_lit_chars_any = "deny"
+use_self = "deny"
+useless_let_if_seq = "deny"
+branches_sharing_code = "deny"
+equatable_if_let = "deny"
+option_if_let_else = "deny"
+needless_pass_by_ref_mut = "deny"
+needless_collect = "deny"
+redundant_clone = "deny"
+set_contains_or_insert = "deny"
+significant_drop_in_scrutinee = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+
+todo = "deny"
+unreachable = "deny"
+unimplemented = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+
+# Safety & Soundness
+undocumented_unsafe_blocks = "deny"
+uninit_assumed_init = "deny"
+uninit_vec = "deny"
+cast_ptr_alignment = "deny"
+ptr_as_ptr = "deny"
+
+# Production Quality & Best Practices
+fallible_impl_from = "deny"
+mut_mut = "deny"
+char_lit_as_u8 = "deny"
+match_wild_err_arm = "deny"
+invalid_upcast_comparisons = "deny"
+
+# Expected/Allowed
+clone_on_ref_ptr = "allow"
+
+# Expected/Allowed
+cargo_common_metadata = "allow"
+cast_precision_loss = "allow"
+multiple_crate_versions = "allow"
+single_call_fn = "allow"
+similar_names = "allow"
+unreadable_literal = "allow"
+many_single_char_names = "allow"
+suboptimal_flops = "allow"
+cast_lossless = "allow"
+while_float = "allow"
+or_fun_call = "allow"
+significant_drop_tightening = "allow"
+suspicious_operation_groupings = "allow"
+literal_string_with_formatting_args = "allow"
+future_not_send = "allow"
+cast_sign_loss = "allow"
+float_cmp = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+missing_panics_doc = "allow"
+missing_errors_doc = "allow"
+module_name_repetitions = "allow"
+struct_excessive_bools = "allow"
+unused_async_trait_impl = "allow"
+
+[workspace.dependencies]
+cxx = { version = "1.0", default-features = false, features = ["std"] }
+cxx-qt = { version = "0.10", default-features = false }
+cxx-qt-build = { version = "0.10", default-features = false }
+cxx-qt-lib = { version = "0.10", default-features = false }
+# Interim: switches to a crates.io version once pumpkin-gui-api is published (plan Phase 7/8).
+pumpkin-gui-api = { git = "https://github.com/zinedinp/Pumpkin", branch = "qt-gui" }

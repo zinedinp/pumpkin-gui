@@ -1,0 +1,67 @@
+name: Cargo Build, Test, and Linting
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  format:
+    name: Check formatting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup update stable && rustup default stable
+      - run: rustup component add rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+
+  machete:
+    name: Detect unused dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup update stable && rustup default stable
+      - uses: bnjbvr/cargo-machete@main
+
+  clippy:
+    name: Run lints
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup update stable && rustup default stable
+      - run: rustup component add clippy
+      - name: Install Qt6 build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qt6-base-dev qt6-declarative-dev libqt6svg6-dev libwayland-dev
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets --all-features
+
+  # TODO: Windows/macOS need Qt6 via vcpkg for cxx-qt-build to find it; that setup is unverified
+  # for this repo, so CI is Linux-only until it's worked out (see Phase 2 notes).
+  build_and_test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    needs: [format, machete, clippy]
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup update stable && rustup default stable
+      - name: Install Qt6 build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qt6-base-dev qt6-declarative-dev libqt6svg6-dev libwayland-dev
+      - uses: taiki-e/install-action@nextest
+      - uses: Swatinem/rust-cache@v2
+      - name: Cargo nextest
+        run: cargo nextest run --verbose
+      - name: Cargo doctest
+        run: cargo test --doc --verbose
