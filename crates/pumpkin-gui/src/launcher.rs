@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 
 use pumpkin_gui_api::GUI_ENDPOINT_ENV;
 
+use crate::client::{self, Events};
 use crate::config::{self, Connection};
 use crate::probe;
 
@@ -38,18 +39,12 @@ pub enum Status {
     Failed { headline: String, detail: String },
 }
 
-static STATUS: Mutex<Status> = Mutex::new(Status::Resolving);
+/// Set once by [`start`]; the browse/attach entry points below are driven from the window and
+/// need somewhere to report progress without every caller threading a sender through.
+static EVENTS: std::sync::OnceLock<Events> = std::sync::OnceLock::new();
 static MANAGED: AtomicBool = AtomicBool::new(false);
 static MANAGED_CHILD: Mutex<Option<std::process::Child>> = Mutex::new(None);
 static STDERR_TAIL: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
-
-#[must_use]
-pub fn status() -> Status {
-    STATUS
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone()
-}
 
 /// True once a source (`gui.conf`, auto-detect, or the wizard) has resolved to spawning the
 /// server
@@ -59,11 +54,14 @@ pub fn is_managed() -> bool {
 }
 
 fn set_status(status: Status) {
-    *STATUS.lock().unwrap_or_else(PoisonError::into_inner) = status;
+    if let Some(events) = EVENTS.get() {
+        let _ = events.send(client::Event::Status(status));
+    }
 }
 
 /// Kicks off resolution on a background thread. `cli_attach` is the `--attach` flag
-pub fn start(cli_attach: Option<String>) {
+pub fn start(cli_attach: Option<String>, events: Events) {
+    let _ = EVENTS.set(events);
     std::thread::spawn(move || resolve(cli_attach));
 }
 
@@ -250,9 +248,11 @@ fn connect_with_retry(endpoint: &str) -> bool {
             return false;
         }
 
-        match crate::client::connect(endpoint) {
-            Ok(mirror) => {
-                crate::install(mirror);
+        let Some(events) = EVENTS.get() else {
+            return false;
+        };
+        match client::connect(endpoint, events.clone()) {
+            Ok(()) => {
                 set_status(Status::Connected);
                 return true;
             }
