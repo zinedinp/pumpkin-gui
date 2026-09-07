@@ -103,7 +103,7 @@ fn connect_receives_hello_snapshot_and_logs() {
                     assert_eq!(line, "list");
                     return;
                 }
-                GuiMessage::RequestStop => panic!("unexpected RequestStop"),
+                other => panic!("unexpected message: {other:?}"),
             }
         }
     });

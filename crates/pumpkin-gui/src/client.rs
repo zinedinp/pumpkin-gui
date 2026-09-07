@@ -6,9 +6,8 @@ use std::time::Duration;
 
 use arc_swap::ArcSwap;
 use pumpkin_gui_api::{
-    GuiMessage, LogRing, PROTOCOL_VERSION, RequestId, ServerMessage, ServerMeta, Snapshot,
-    ThemePreference,
-    read_message, write_message,
+    ConfigFile, GuiMessage, LogRing, PROTOCOL_VERSION, PluginRow, RequestId, ServerMessage,
+    ServerMeta, Snapshot, ThemePreference, read_message, write_message,
 };
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::mpsc;
@@ -19,10 +18,23 @@ const COMPLETIONS_TIMEOUT: Duration = Duration::from_millis(500);
 /// How much scrollback the window keeps, independent of the server's own ring size.
 const LOG_CAPACITY: usize = 20_000;
 
+/// The config editor's view of one file.
+#[derive(Default)]
+pub struct ConfigState {
+    /// The file as is on disk
+    pub toml: String,
+    /// Why the last write was rejected; empty when it succeeded or none was attempted.
+    pub error: String,
+    /// Bumped every reply, so the editor can tell a new answer from an old one
+    pub revision: u64,
+}
+
 /// The connection the `QObject`s read from and send actions through.
 pub struct GuiMirror {
     pub snapshot: Arc<ArcSwap<Snapshot>>,
     pub meta: Arc<ArcSwap<ServerMeta>>,
+    pub plugins: Arc<ArcSwap<Vec<PluginRow>>>,
+    pub config: Arc<ArcSwap<ConfigState>>,
     pub theme: ThemePreference,
     logs: LogRing,
     outbound: mpsc::UnboundedSender<GuiMessage>,
@@ -50,6 +62,25 @@ impl GuiMirror {
     /// Begins a graceful shutdown.
     pub fn request_stop(&self) {
         let _ = self.outbound.send(GuiMessage::RequestStop);
+    }
+
+    /// Asks for a configuration file's current contents
+    pub fn read_config(&self, file: ConfigFile) {
+        let _ = self.outbound.send(GuiMessage::ReadConfig(file));
+    }
+
+    /// Replaces a configuration file. The server parses before it is written.
+    pub fn write_config(&self, file: ConfigFile, toml: String) {
+        let _ = self.outbound.send(GuiMessage::WriteConfig { file, toml });
+    }
+
+    fn store_config(&self, toml: Option<String>, error: String) {
+        let previous = self.config.load();
+        self.config.store(Arc::new(ConfigState {
+            toml: toml.unwrap_or_else(|| previous.toml.clone()),
+            error,
+            revision: previous.revision + 1,
+        }));
     }
 
     /// Tab-completion candidates for `line` at `cursor`.
@@ -164,6 +195,8 @@ async fn run_connection(
     let mirror = Arc::new(GuiMirror {
         snapshot: Arc::new(ArcSwap::from_pointee(Snapshot::default())),
         meta: Arc::new(ArcSwap::from_pointee(meta)),
+        plugins: Arc::new(ArcSwap::from_pointee(Vec::new())),
+        config: Arc::new(ArcSwap::from_pointee(ConfigState::default())),
         theme,
         logs: LogRing::new(LOG_CAPACITY),
         outbound: out_tx,
@@ -199,9 +232,18 @@ async fn reader_loop<R: AsyncRead + Unpin>(mut read_half: R, mirror: &Arc<GuiMir
     loop {
         match read_message::<_, ServerMessage>(&mut read_half).await {
             Ok(ServerMessage::Snapshot(snapshot)) => mirror.snapshot.store(Arc::new(snapshot)),
+            
             Ok(ServerMessage::LogLines(lines)) => mirror.logs.extend(lines),
+
             Ok(ServerMessage::Completions { id, candidates }) => {
                 mirror.resolve_completions(id, candidates);
+            }
+            Ok(ServerMessage::Plugins(rows)) => mirror.plugins.store(Arc::new(rows)),
+
+            Ok(ServerMessage::Config { toml, .. }) => mirror.store_config(Some(toml), String::new()),
+
+            Ok(ServerMessage::ConfigWritten { result, .. }) => {
+                mirror.store_config(None, result.err().unwrap_or_default());
             }
             // `Hello` is only ever sent once, immediately after accept, seeing it again here
             // would be a protocol violation, so it ends the connection just like a shutdown or a
